@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getHanaClient } from '@/lib/sap-hana-client';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const hanaClient = getHanaClient();
   
@@ -18,7 +21,7 @@ export async function GET() {
     }
 
     // Test connection
-    const isConnected = await hanaClient.testConnection();
+    const isConnected = await hanaClient.connect();
     
     if (!isConnected) {
       return NextResponse.json({
@@ -47,8 +50,8 @@ export async function GET() {
     
     for (const { name, query } of sampleQueries) {
       try {
-        const result = await hanaClient.execute(query);
-        dataCounts[name] = result[0]?.COUNT || 0;
+        const result = await hanaClient.executeQuery(query);
+        dataCounts[name] = result.data?.[0]?.COUNT || 0;
       } catch (error) {
         dataCounts[name] = 0;
       }

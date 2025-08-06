@@ -1,4 +1,4 @@
-import hdb from 'hdb'
+import { createConnection } from '@sap/hana-client'
 
 interface HANAConnectionConfig {
   serverNode: string
@@ -29,84 +29,89 @@ interface ConnectionStatus {
   }
 }
 
-interface HanaConfig {
-  host: string
-  port: number
-  user: string
-  password: string
-}
-
-class HanaClient {
-  private client: any
-  private config: HanaConfig
-
-  constructor(config: HanaConfig) {
-    this.config = config
-    this.client = hdb.createClient(config)
-  }
-
-  async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.client.connect((err: any) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve()
-        }
-      })
-    })
-  }
-
-  async execute(sql: string, params: any[] = []): Promise<any[]> {
-    return new Promise((resolve, reject) => {
-      this.client.exec(sql, params, (err: any, rows: any[]) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve(rows)
-        }
-      })
-    })
-  }
-
-  async disconnect(): Promise<void> {
-    return new Promise((resolve) => {
-      this.client.disconnect(() => {
-        resolve()
-      })
-    })
-  }
-}
-
 class SAP_HANA_Client {
-  private client: HanaClient
-  private config: HanaConfig
+  private connection: any = null
+  private config: HANAConnectionConfig
+  private isConnected: boolean = false
+  private lastError: string | null = null
+  private connectionAttempts: number = 0
+  private maxRetries: number = 3
 
   constructor() {
     this.config = {
-      host: process.env.SAP_HANA_SERVER_NODE || 'localhost',
-      port: 30015,
-      user: process.env.SAP_HANA_USERNAME || 'SYSTEM',
-      password: process.env.SAP_HANA_PASSWORD || 'password'
+      serverNode: process.env.SAP_HANA_SERVER_NODE || '',
+      username: process.env.SAP_HANA_USERNAME || '',
+      password: process.env.SAP_HANA_PASSWORD || '',
+      database: 'HXE',
+      schema: 'TRADE_INTELLIGENCE',
+      encrypt: true,
+      sslValidateCertificate: false
     }
-    this.client = new HanaClient(this.config)
+  }
+
+  isConfigured(): boolean {
+    return !!(this.config.serverNode && this.config.username && this.config.password)
   }
 
   async connect(): Promise<boolean> {
     try {
-      await this.client.connect()
-      console.log('Connected to SAP HANA successfully')
+      this.connectionAttempts++
+      
+      if (this.connection) {
+        return true
+      }
+
+      if (!this.isConfigured()) {
+        this.lastError = 'SAP HANA credentials not configured'
+        return false
+      }
+
+      this.connection = createConnection()
+      await new Promise((resolve, reject) => {
+        this.connection.connect(this.config, (err: any) => {
+          if (err) {
+            console.error('SAP HANA connection error:', err)
+            reject(err)
+          } else {
+            console.log('Connected to SAP HANA successfully')
+            resolve(true)
+          }
+        })
+      })
+
+      this.isConnected = true
+      this.lastError = null
+      
       return true
     } catch (error) {
-      console.error('SAP HANA connection failed:', error)
+      this.isConnected = false
+      this.lastError = error instanceof Error ? error.message : 'Unknown connection error'
+      console.error('SAP HANA connection failed:', this.lastError)
+      
+      if (this.connectionAttempts < this.maxRetries) {
+        console.log(`Retrying connection (${this.connectionAttempts}/${this.maxRetries})...`)
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        return this.connect()
+      }
+      
       return false
     }
   }
 
   async disconnect(): Promise<void> {
     try {
-      await this.client.disconnect()
-      console.log('Disconnected from SAP HANA successfully')
+      if (this.connection) {
+        await new Promise((resolve) => {
+          this.connection.disconnect((err: any) => {
+            if (err) {
+              console.error('Error disconnecting from SAP HANA:', err)
+            }
+            resolve(true)
+          })
+        })
+        this.connection = null
+        this.isConnected = false
+      }
     } catch (error) {
       console.error('Error during disconnect:', error)
     }
@@ -124,13 +129,24 @@ class SAP_HANA_Client {
         }
       }
 
-      const result = await this.client.execute(sql, parameters)
-      return {
-        success: true,
-        data: result,
-        rowCount: result ? result.length : 0,
-        executionTime: Date.now() - startTime
-      }
+      return new Promise((resolve) => {
+        this.connection.exec(sql, parameters, (err: any, result: any) => {
+          if (err) {
+            console.error('Query execution error:', err)
+            resolve({
+              success: false,
+              error: err.message || 'Query execution failed'
+            })
+          } else {
+            resolve({
+              success: true,
+              data: result,
+              rowCount: result ? result.length : 0,
+              executionTime: Date.now() - startTime
+            })
+          }
+        })
+      })
     } catch (error) {
       console.error('Execute query error:', error)
       return {
@@ -363,17 +379,23 @@ class SAP_HANA_Client {
 
   async getConnectionStatus(): Promise<ConnectionStatus> {
     try {
-      await this.connect()
-      // Test with a simple query
-      const result = await this.executeQuery('SELECT 1 as test FROM DUMMY')
-      return {
-        connected: result.success,
-        lastConnected: new Date(),
-        serverInfo: {
-          version: 'SAP HANA Cloud 2024.1',
-          uptime: Math.floor(Math.random() * 86400), // Random uptime in seconds
-          memoryUsage: Math.floor(Math.random() * 80) + 20 // 20-100% memory usage
+      const isConnected = await this.connect()
+      if (isConnected) {
+        // Test with a simple query
+        const result = await this.executeQuery('SELECT 1 as test FROM DUMMY')
+        return {
+          connected: result.success,
+          lastConnected: new Date(),
+          serverInfo: {
+            version: 'SAP HANA Cloud 2024.1',
+            uptime: Math.floor(Math.random() * 86400), // Random uptime in seconds
+            memoryUsage: Math.floor(Math.random() * 80) + 20 // 20-100% memory usage
+          }
         }
+      }
+      return {
+        connected: false,
+        error: 'Failed to establish connection'
       }
     } catch (error) {
       return {
@@ -383,21 +405,40 @@ class SAP_HANA_Client {
     }
   }
 
+  async getTableInfo(): Promise<any[]> {
+    try {
+      const result = await this.executeQuery(`
+        SELECT 
+          TABLE_NAME,
+          TABLE_TYPE,
+          RECORD_COUNT
+        FROM SYS.TABLES 
+        WHERE SCHEMA_NAME = 'TRADE_INTELLIGENCE'
+        ORDER BY TABLE_NAME
+      `)
+      
+      return result.success ? result.data || [] : []
+    } catch (error) {
+      console.error('Error getting table info:', error)
+      return []
+    }
+  }
+
   // Utility methods
   isConnectionActive(): boolean {
-    return true // Placeholder for actual connection status check
+    return this.isConnected
   }
 
   getLastError(): string | null {
-    return null // Placeholder for actual error retrieval
+    return this.lastError
   }
 
   getConnectionAttempts(): number {
-    return 0 // Placeholder for actual connection attempts retrieval
+    return this.connectionAttempts
   }
 
   resetConnectionAttempts(): void {
-    // Placeholder for actual connection attempts reset
+    this.connectionAttempts = 0
   }
 }
 
@@ -415,3 +456,4 @@ export function getHANAClient(): SAP_HANA_Client {
 export const getHanaClient = getHANAClient
 
 export type { HANAConnectionConfig, QueryResult, ConnectionStatus }
+export { SAP_HANA_Client }
