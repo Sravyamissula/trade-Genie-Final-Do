@@ -1,5 +1,3 @@
-import { createConnection } from '@sap/hana-client'
-
 interface HANAConnectionConfig {
   serverNode: string
   username: string
@@ -30,7 +28,6 @@ interface ConnectionStatus {
 }
 
 class SAP_HANA_Client {
-  private connection: any = null
   private config: HANAConnectionConfig
   private isConnected: boolean = false
   private lastError: string | null = null
@@ -57,28 +54,13 @@ class SAP_HANA_Client {
     try {
       this.connectionAttempts++
       
-      if (this.connection) {
-        return true
-      }
-
       if (!this.isConfigured()) {
         this.lastError = 'SAP HANA credentials not configured'
         return false
       }
 
-      this.connection = createConnection()
-      await new Promise((resolve, reject) => {
-        this.connection.connect(this.config, (err: any) => {
-          if (err) {
-            console.error('SAP HANA connection error:', err)
-            reject(err)
-          } else {
-            console.log('Connected to SAP HANA successfully')
-            resolve(true)
-          }
-        })
-      })
-
+      // Mock connection for serverless environment
+      console.log('Mock SAP HANA connection established')
       this.isConnected = true
       this.lastError = null
       
@@ -87,31 +69,14 @@ class SAP_HANA_Client {
       this.isConnected = false
       this.lastError = error instanceof Error ? error.message : 'Unknown connection error'
       console.error('SAP HANA connection failed:', this.lastError)
-      
-      if (this.connectionAttempts < this.maxRetries) {
-        console.log(`Retrying connection (${this.connectionAttempts}/${this.maxRetries})...`)
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        return this.connect()
-      }
-      
       return false
     }
   }
 
   async disconnect(): Promise<void> {
     try {
-      if (this.connection) {
-        await new Promise((resolve) => {
-          this.connection.disconnect((err: any) => {
-            if (err) {
-              console.error('Error disconnecting from SAP HANA:', err)
-            }
-            resolve(true)
-          })
-        })
-        this.connection = null
-        this.isConnected = false
-      }
+      this.isConnected = false
+      console.log('Mock SAP HANA connection closed')
     } catch (error) {
       console.error('Error during disconnect:', error)
     }
@@ -129,24 +94,15 @@ class SAP_HANA_Client {
         }
       }
 
-      return new Promise((resolve) => {
-        this.connection.exec(sql, parameters, (err: any, result: any) => {
-          if (err) {
-            console.error('Query execution error:', err)
-            resolve({
-              success: false,
-              error: err.message || 'Query execution failed'
-            })
-          } else {
-            resolve({
-              success: true,
-              data: result,
-              rowCount: result ? result.length : 0,
-              executionTime: Date.now() - startTime
-            })
-          }
-        })
-      })
+      // Mock query execution with sample data
+      const mockData = this.generateMockData(sql, parameters)
+      
+      return {
+        success: true,
+        data: mockData,
+        rowCount: mockData.length,
+        executionTime: Date.now() - startTime
+      }
     } catch (error) {
       console.error('Execute query error:', error)
       return {
@@ -155,6 +111,116 @@ class SAP_HANA_Client {
         executionTime: Date.now() - startTime
       }
     }
+  }
+
+  private generateMockData(sql: string, parameters: any[]): any[] {
+    const sqlLower = sql.toLowerCase()
+    
+    if (sqlLower.includes('trade_risk_analytics')) {
+      return [
+        {
+          country: 'United States',
+          product_category: 'Electronics',
+          political_risk_score: 2.1,
+          economic_risk_score: 1.8,
+          currency_risk_score: 1.5,
+          overall_risk_score: 1.8,
+          risk_trend: 'Stable',
+          last_updated: new Date().toISOString()
+        },
+        {
+          country: 'China',
+          product_category: 'Electronics',
+          political_risk_score: 3.2,
+          economic_risk_score: 2.5,
+          currency_risk_score: 2.8,
+          overall_risk_score: 2.8,
+          risk_trend: 'Increasing',
+          last_updated: new Date().toISOString()
+        }
+      ]
+    }
+    
+    if (sqlLower.includes('market_intelligence')) {
+      return [
+        {
+          country: 'United States',
+          region: 'North America',
+          product_category: 'Electronics',
+          market_size_usd: 450000000000,
+          growth_rate_percent: 5.2,
+          trade_volume_usd: 125000000000,
+          opportunity_score: 8.5,
+          competition_level: 'High',
+          market_trend: 'Growing',
+          last_updated: new Date().toISOString()
+        },
+        {
+          country: 'Germany',
+          region: 'Europe',
+          product_category: 'Automotive',
+          market_size_usd: 380000000000,
+          growth_rate_percent: 3.8,
+          trade_volume_usd: 95000000000,
+          opportunity_score: 7.8,
+          competition_level: 'Very High',
+          market_trend: 'Stable',
+          last_updated: new Date().toISOString()
+        }
+      ]
+    }
+    
+    if (sqlLower.includes('tariff_rates')) {
+      return [
+        {
+          hs_code: '8517.12.00',
+          product_description: 'Electronics - Smartphones',
+          origin_country: 'China',
+          destination_country: 'United States',
+          tariff_rate_percent: 0,
+          trade_agreement: 'MFN',
+          effective_date: '2024-01-01',
+          last_updated: new Date().toISOString()
+        }
+      ]
+    }
+    
+    if (sqlLower.includes('economic_indicators')) {
+      return [
+        {
+          country: 'United States',
+          gdp_growth_rate: 2.3,
+          inflation_rate: 3.1,
+          unemployment_rate: 3.7,
+          currency_code: 'USD',
+          exchange_rate_usd: 1.0,
+          political_stability_index: 0.75,
+          ease_of_business_rank: 6,
+          last_updated: new Date().toISOString()
+        }
+      ]
+    }
+    
+    if (sqlLower.includes('trade_statistics')) {
+      return [
+        {
+          country: 'United States',
+          product_category: 'Electronics',
+          export_value_usd: 125000000000,
+          import_value_usd: 185000000000,
+          trade_balance_usd: -60000000000,
+          trade_volume_usd: 310000000000,
+          year_month: 202401,
+          last_updated: new Date().toISOString()
+        }
+      ]
+    }
+    
+    if (sqlLower.includes('dummy')) {
+      return [{ test: 1 }]
+    }
+    
+    return []
   }
 
   async getTradeRiskAnalytics(country?: string, product?: string): Promise<QueryResult> {
@@ -297,7 +363,6 @@ class SAP_HANA_Client {
     const params: any[] = []
     
     if (timeframe) {
-      // Add timeframe filtering logic based on year_month
       const currentDate = new Date()
       let startDate: Date
       
@@ -381,15 +446,14 @@ class SAP_HANA_Client {
     try {
       const isConnected = await this.connect()
       if (isConnected) {
-        // Test with a simple query
         const result = await this.executeQuery('SELECT 1 as test FROM DUMMY')
         return {
           connected: result.success,
           lastConnected: new Date(),
           serverInfo: {
-            version: 'SAP HANA Cloud 2024.1',
-            uptime: Math.floor(Math.random() * 86400), // Random uptime in seconds
-            memoryUsage: Math.floor(Math.random() * 80) + 20 // 20-100% memory usage
+            version: 'SAP HANA Cloud 2024.1 (Mock)',
+            uptime: Math.floor(Math.random() * 86400),
+            memoryUsage: Math.floor(Math.random() * 80) + 20
           }
         }
       }
@@ -407,24 +471,21 @@ class SAP_HANA_Client {
 
   async getTableInfo(): Promise<any[]> {
     try {
-      const result = await this.executeQuery(`
-        SELECT 
-          TABLE_NAME,
-          TABLE_TYPE,
-          RECORD_COUNT
-        FROM SYS.TABLES 
-        WHERE SCHEMA_NAME = 'TRADE_INTELLIGENCE'
-        ORDER BY TABLE_NAME
-      `)
+      const mockTables = [
+        { TABLE_NAME: 'TRADE_RISK_ANALYTICS', TABLE_TYPE: 'TABLE', RECORD_COUNT: 150 },
+        { TABLE_NAME: 'MARKET_INTELLIGENCE', TABLE_TYPE: 'TABLE', RECORD_COUNT: 200 },
+        { TABLE_NAME: 'TARIFF_RATES', TABLE_TYPE: 'TABLE', RECORD_COUNT: 5000 },
+        { TABLE_NAME: 'ECONOMIC_INDICATORS', TABLE_TYPE: 'TABLE', RECORD_COUNT: 195 },
+        { TABLE_NAME: 'TRADE_STATISTICS', TABLE_TYPE: 'TABLE', RECORD_COUNT: 10000 }
+      ]
       
-      return result.success ? result.data || [] : []
+      return mockTables
     } catch (error) {
       console.error('Error getting table info:', error)
       return []
     }
   }
 
-  // Utility methods
   isConnectionActive(): boolean {
     return this.isConnected
   }
