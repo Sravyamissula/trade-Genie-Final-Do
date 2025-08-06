@@ -62,6 +62,7 @@ export default function AnalyticsPage() {
   const [showDetailedReport, setShowDetailedReport] = useState(false)
   const [keyTrends, setKeyTrends] = useState<string[]>([])
   const [lastUpdated, setLastUpdated] = useState<string>("")
+  const [isExporting, setIsExporting] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -118,6 +119,52 @@ export default function AnalyticsPage() {
     }
 
     setIsLoading(false)
+  }
+
+  const exportFullReport = async () => {
+    setIsExporting(true)
+    
+    try {
+      const response = await fetch('/api/market-intelligence/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          marketData,
+          statistics,
+          marketConditions,
+          keyTrends,
+          filters: {
+            region: selectedRegion,
+            product: selectedProduct,
+            timeframe: timeframe
+          }
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data?.pdf) {
+          // Create download link from base64 PDF data
+          const link = document.createElement('a')
+          link.href = data.data.pdf
+          link.download = data.data.filename || `market-intelligence-report-${Date.now()}.pdf`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+        } else {
+          throw new Error('Invalid response format')
+        }
+      } else {
+        throw new Error('Failed to generate report')
+      }
+    } catch (err) {
+      console.error('Export error:', err)
+      alert('Failed to export report. Please try again.')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const formatCurrency = (value: number): string => {
@@ -177,6 +224,50 @@ export default function AnalyticsPage() {
     router.push("/partners")
   }
 
+  const downloadMarketReport = async (market: MarketData) => {
+    try {
+      const response = await fetch('/api/market-intelligence/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          marketData: [market],
+          statistics: {
+            totalMarketSize: market.marketSize * 1000000,
+            activeMarkets: 1,
+            avgGrowthRate: market.growthRate,
+            highOpportunityMarkets: market.opportunity > 70 ? 1 : 0,
+            growingMarkets: market.trend === "up" ? 1 : 0,
+            decliningMarkets: market.trend === "down" ? 1 : 0
+          },
+          marketConditions,
+          keyTrends: [`${market.country} ${market.product} market analysis`],
+          filters: {
+            region: market.country,
+            product: market.product,
+            timeframe: timeframe
+          }
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data?.pdf) {
+          const link = document.createElement('a')
+          link.href = data.data.pdf
+          link.download = `${market.country}-${market.product}-report.pdf`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+        }
+      }
+    } catch (err) {
+      console.error('Download error:', err)
+      alert('Failed to download report. Please try again.')
+    }
+  }
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-beige-50 via-white to-purple-50 flex items-center justify-center">
@@ -222,9 +313,15 @@ export default function AnalyticsPage() {
               <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" className="bg-transparent">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="bg-transparent"
+              onClick={exportFullReport}
+              disabled={isExporting}
+            >
               <Download className="w-4 h-4 mr-2" />
-              Export
+              {isExporting ? 'Exporting...' : 'Export'}
             </Button>
           </div>
         </div>
@@ -671,7 +768,11 @@ export default function AnalyticsPage() {
 
                 {/* Action Buttons */}
                 <div className="flex space-x-3 pt-6 border-t">
-                  <Button variant="outline" className="flex-1 bg-transparent">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 bg-transparent"
+                    onClick={() => downloadMarketReport(selectedMarket)}
+                  >
                     <Download className="w-4 h-4 mr-2" />
                     Download Full Report
                   </Button>

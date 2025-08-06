@@ -1,17 +1,21 @@
+import hdb from 'hdb'
+
 interface HANAConnectionConfig {
   serverNode: string
   username: string
   password: string
   database?: string
   schema?: string
+  encrypt?: boolean
+  sslValidateCertificate?: boolean
 }
 
 interface QueryResult {
   success: boolean
-  data: any[]
+  data?: any[]
   error?: string
-  rowCount: number
-  executionTime: number
+  rowCount?: number
+  executionTime?: number
 }
 
 interface ConnectionStatus {
@@ -25,58 +29,86 @@ interface ConnectionStatus {
   }
 }
 
-class SAP_HANA_Client {
-  private config: HANAConnectionConfig
-  private isConnected: boolean = false
-  private lastError: string | null = null
-  private connectionAttempts: number = 0
-  private maxRetries: number = 3
+interface HanaConfig {
+  host: string
+  port: number
+  user: string
+  password: string
+}
 
-  constructor(config: HANAConnectionConfig) {
+class HanaClient {
+  private client: any
+  private config: HanaConfig
+
+  constructor(config: HanaConfig) {
     this.config = config
+    this.client = hdb.createClient(config)
+  }
+
+  async connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.client.connect((err: any) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
+  async execute(sql: string, params: any[] = []): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      this.client.exec(sql, params, (err: any, rows: any[]) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve(rows)
+        }
+      })
+    })
+  }
+
+  async disconnect(): Promise<void> {
+    return new Promise((resolve) => {
+      this.client.disconnect(() => {
+        resolve()
+      })
+    })
+  }
+}
+
+class SAP_HANA_Client {
+  private client: HanaClient
+  private config: HanaConfig
+
+  constructor() {
+    this.config = {
+      host: process.env.SAP_HANA_SERVER_NODE || 'localhost',
+      port: 30015,
+      user: process.env.SAP_HANA_USERNAME || 'SYSTEM',
+      password: process.env.SAP_HANA_PASSWORD || 'password'
+    }
+    this.client = new HanaClient(this.config)
   }
 
   async connect(): Promise<boolean> {
     try {
-      this.connectionAttempts++
-      
-      // Simulate connection attempt
-      console.log(`Attempting to connect to SAP HANA at ${this.config.serverNode}...`)
-      
-      // In a real implementation, this would use @sap/hana-client
-      // For now, we'll simulate the connection
-      await this.simulateConnection()
-      
-      this.isConnected = true
-      this.lastError = null
-      console.log('Successfully connected to SAP HANA Cloud')
-      
+      await this.client.connect()
+      console.log('Connected to SAP HANA successfully')
       return true
     } catch (error) {
-      this.isConnected = false
-      this.lastError = error instanceof Error ? error.message : 'Unknown connection error'
-      console.error('SAP HANA connection failed:', this.lastError)
-      
-      if (this.connectionAttempts < this.maxRetries) {
-        console.log(`Retrying connection (${this.connectionAttempts}/${this.maxRetries})...`)
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        return this.connect()
-      }
-      
+      console.error('SAP HANA connection failed:', error)
       return false
     }
   }
 
   async disconnect(): Promise<void> {
     try {
-      if (this.isConnected) {
-        // Simulate disconnection
-        await new Promise(resolve => setTimeout(resolve, 100))
-        this.isConnected = false
-        console.log('Disconnected from SAP HANA')
-      }
+      await this.client.disconnect()
+      console.log('Disconnected from SAP HANA successfully')
     } catch (error) {
-      console.error('Error during disconnection:', error)
+      console.error('Error during disconnect:', error)
     }
   }
 
@@ -84,211 +116,289 @@ class SAP_HANA_Client {
     const startTime = Date.now()
     
     try {
-      if (!this.isConnected) {
-        const connected = await this.connect()
-        if (!connected) {
-          throw new Error('Unable to establish database connection')
+      const isConnected = await this.connect()
+      if (!isConnected) {
+        return {
+          success: false,
+          error: 'Failed to connect to SAP HANA'
         }
       }
 
-      // Simulate query execution with mock data
-      const mockData = await this.generateMockQueryResult(sql, parameters)
-      const executionTime = Date.now() - startTime
-
+      const result = await this.client.execute(sql, parameters)
       return {
         success: true,
-        data: mockData,
-        rowCount: mockData.length,
-        executionTime
+        data: result,
+        rowCount: result ? result.length : 0,
+        executionTime: Date.now() - startTime
       }
     } catch (error) {
-      const executionTime = Date.now() - startTime
-      const errorMessage = error instanceof Error ? error.message : 'Unknown query error'
-      
-      console.error('Query execution failed:', errorMessage)
-      
+      console.error('Execute query error:', error)
       return {
         success: false,
-        data: [],
-        error: errorMessage,
-        rowCount: 0,
-        executionTime
+        error: error instanceof Error ? error.message : 'Unknown error',
+        executionTime: Date.now() - startTime
       }
     }
+  }
+
+  async getTradeRiskAnalytics(country?: string, product?: string): Promise<QueryResult> {
+    let sql = `
+      SELECT 
+        country,
+        product_category,
+        political_risk_score,
+        economic_risk_score,
+        currency_risk_score,
+        overall_risk_score,
+        risk_trend,
+        last_updated
+      FROM TRADE_RISK_ANALYTICS
+      WHERE 1=1
+    `
+    
+    const params: any[] = []
+    
+    if (country) {
+      sql += ' AND UPPER(country) = UPPER(?)'
+      params.push(country)
+    }
+    
+    if (product) {
+      sql += ' AND UPPER(product_category) = UPPER(?)'
+      params.push(product)
+    }
+    
+    sql += ' ORDER BY overall_risk_score DESC'
+    
+    return this.executeQuery(sql, params)
+  }
+
+  async getMarketIntelligence(region?: string, product?: string): Promise<QueryResult> {
+    let sql = `
+      SELECT 
+        country,
+        region,
+        product_category,
+        market_size_usd,
+        growth_rate_percent,
+        trade_volume_usd,
+        opportunity_score,
+        competition_level,
+        market_trend,
+        last_updated
+      FROM MARKET_INTELLIGENCE
+      WHERE 1=1
+    `
+    
+    const params: any[] = []
+    
+    if (region && region !== 'global') {
+      sql += ' AND UPPER(region) = UPPER(?)'
+      params.push(region)
+    }
+    
+    if (product && product !== 'all') {
+      sql += ' AND UPPER(product_category) = UPPER(?)'
+      params.push(product)
+    }
+    
+    sql += ' ORDER BY market_size_usd DESC'
+    
+    return this.executeQuery(sql, params)
+  }
+
+  async getTariffData(hsCode?: string, originCountry?: string, destinationCountry?: string): Promise<QueryResult> {
+    let sql = `
+      SELECT 
+        hs_code,
+        product_description,
+        origin_country,
+        destination_country,
+        tariff_rate_percent,
+        trade_agreement,
+        effective_date,
+        last_updated
+      FROM TARIFF_RATES
+      WHERE 1=1
+    `
+    
+    const params: any[] = []
+    
+    if (hsCode) {
+      sql += ' AND hs_code = ?'
+      params.push(hsCode)
+    }
+    
+    if (originCountry) {
+      sql += ' AND UPPER(origin_country) = UPPER(?)'
+      params.push(originCountry)
+    }
+    
+    if (destinationCountry) {
+      sql += ' AND UPPER(destination_country) = UPPER(?)'
+      params.push(destinationCountry)
+    }
+    
+    sql += ' ORDER BY tariff_rate_percent DESC'
+    
+    return this.executeQuery(sql, params)
+  }
+
+  async getEconomicIndicators(): Promise<QueryResult> {
+    const sql = `
+      SELECT 
+        country,
+        gdp_growth_rate,
+        inflation_rate,
+        unemployment_rate,
+        currency_code,
+        exchange_rate_usd,
+        political_stability_index,
+        ease_of_business_rank,
+        last_updated
+      FROM ECONOMIC_INDICATORS
+      ORDER BY gdp_growth_rate DESC
+    `
+    
+    return this.executeQuery(sql)
+  }
+
+  async getTradeStatistics(timeframe?: string): Promise<QueryResult> {
+    let sql = `
+      SELECT 
+        country,
+        product_category,
+        export_value_usd,
+        import_value_usd,
+        trade_balance_usd,
+        trade_volume_usd,
+        year_month,
+        last_updated
+      FROM TRADE_STATISTICS
+      WHERE 1=1
+    `
+    
+    const params: any[] = []
+    
+    if (timeframe) {
+      // Add timeframe filtering logic based on year_month
+      const currentDate = new Date()
+      let startDate: Date
+      
+      switch (timeframe) {
+        case '3m':
+          startDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 3, 1)
+          break
+        case '6m':
+          startDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 6, 1)
+          break
+        case '12m':
+          startDate = new Date(currentDate.getFullYear() - 1, currentDate.getMonth(), 1)
+          break
+        case '24m':
+          startDate = new Date(currentDate.getFullYear() - 2, currentDate.getMonth(), 1)
+          break
+        default:
+          startDate = new Date(currentDate.getFullYear() - 1, currentDate.getMonth(), 1)
+      }
+      
+      const startYearMonth = startDate.getFullYear() * 100 + (startDate.getMonth() + 1)
+      sql += ' AND year_month >= ?'
+      params.push(startYearMonth)
+    }
+    
+    sql += ' ORDER BY trade_volume_usd DESC'
+    
+    return this.executeQuery(sql, params)
+  }
+
+  async insertTradeRiskData(data: any): Promise<QueryResult> {
+    const sql = `
+      INSERT INTO TRADE_RISK_ANALYTICS (
+        country, product_category, political_risk_score, economic_risk_score,
+        currency_risk_score, overall_risk_score, risk_trend, last_updated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `
+    
+    const params = [
+      data.country,
+      data.product_category,
+      data.political_risk_score,
+      data.economic_risk_score,
+      data.currency_risk_score,
+      data.overall_risk_score,
+      data.risk_trend
+    ]
+    
+    return this.executeQuery(sql, params)
+  }
+
+  async updateMarketIntelligence(data: any): Promise<QueryResult> {
+    const sql = `
+      UPDATE MARKET_INTELLIGENCE 
+      SET 
+        market_size_usd = ?,
+        growth_rate_percent = ?,
+        trade_volume_usd = ?,
+        opportunity_score = ?,
+        competition_level = ?,
+        market_trend = ?,
+        last_updated = CURRENT_TIMESTAMP
+      WHERE country = ? AND product_category = ?
+    `
+    
+    const params = [
+      data.market_size_usd,
+      data.growth_rate_percent,
+      data.trade_volume_usd,
+      data.opportunity_score,
+      data.competition_level,
+      data.market_trend,
+      data.country,
+      data.product_category
+    ]
+    
+    return this.executeQuery(sql, params)
   }
 
   async getConnectionStatus(): Promise<ConnectionStatus> {
     try {
-      if (!this.isConnected) {
-        return {
-          connected: false,
-          error: this.lastError || 'Not connected'
-        }
-      }
-
-      // Simulate server info retrieval
-      const serverInfo = {
-        version: 'SAP HANA Cloud 2024.1',
-        uptime: Math.floor(Math.random() * 86400), // Random uptime in seconds
-        memoryUsage: Math.floor(Math.random() * 80) + 20 // 20-100% memory usage
-      }
-
+      await this.connect()
+      // Test with a simple query
+      const result = await this.executeQuery('SELECT 1 as test FROM DUMMY')
       return {
-        connected: true,
+        connected: result.success,
         lastConnected: new Date(),
-        serverInfo
+        serverInfo: {
+          version: 'SAP HANA Cloud 2024.1',
+          uptime: Math.floor(Math.random() * 86400), // Random uptime in seconds
+          memoryUsage: Math.floor(Math.random() * 80) + 20 // 20-100% memory usage
+        }
       }
     } catch (error) {
       return {
         connected: false,
-        error: error instanceof Error ? error.message : 'Status check failed'
+        error: error instanceof Error ? error.message : 'Unknown connection error'
       }
     }
   }
 
-  async testConnection(): Promise<boolean> {
-    try {
-      const result = await this.executeQuery('SELECT 1 FROM DUMMY')
-      return result.success
-    } catch (error) {
-      console.error('Connection test failed:', error)
-      return false
-    }
-  }
-
-  private async simulateConnection(): Promise<void> {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000))
-    
-    // Simulate occasional connection failures
-    if (Math.random() < 0.1 && this.connectionAttempts === 1) {
-      throw new Error('Connection timeout - server unreachable')
-    }
-    
-    // Validate configuration
-    if (!this.config.serverNode || !this.config.username || !this.config.password) {
-      throw new Error('Invalid connection configuration')
-    }
-  }
-
-  private async generateMockQueryResult(sql: string, parameters: any[]): Promise<any[]> {
-    // Simulate query processing delay
-    await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 500))
-    
-    const sqlLower = sql.toLowerCase()
-    
-    // Mock data based on query type
-    if (sqlLower.includes('trade_risk_analytics')) {
-      return this.generateTradeRiskData()
-    } else if (sqlLower.includes('market_intelligence')) {
-      return this.generateMarketIntelligenceData()
-    } else if (sqlLower.includes('tariff_data')) {
-      return this.generateTariffData()
-    } else if (sqlLower.includes('economic_indicators')) {
-      return this.generateEconomicData()
-    } else if (sqlLower.includes('dummy')) {
-      return [{ '1': 1 }]
-    }
-    
-    // Default mock data
-    return [
-      { id: 1, name: 'Sample Data', value: Math.random() * 100, timestamp: new Date().toISOString() },
-      { id: 2, name: 'Mock Record', value: Math.random() * 100, timestamp: new Date().toISOString() }
-    ]
-  }
-
-  private generateTradeRiskData(): any[] {
-    const countries = ['United States', 'China', 'Germany', 'Japan', 'United Kingdom', 'France', 'India', 'Brazil']
-    const products = ['Electronics', 'Textiles', 'Automotive', 'Machinery', 'Chemicals']
-    
-    return Array.from({ length: 20 }, (_, i) => ({
-      id: i + 1,
-      country: countries[Math.floor(Math.random() * countries.length)],
-      product: products[Math.floor(Math.random() * products.length)],
-      political_risk: Math.floor(Math.random() * 100),
-      economic_risk: Math.floor(Math.random() * 100),
-      currency_risk: Math.floor(Math.random() * 100),
-      overall_risk: Math.floor(Math.random() * 100),
-      last_updated: new Date().toISOString()
-    }))
-  }
-
-  private generateMarketIntelligenceData(): any[] {
-    const countries = ['United States', 'China', 'Germany', 'Japan', 'United Kingdom']
-    const products = ['Electronics', 'Textiles', 'Automotive', 'Machinery']
-    
-    return Array.from({ length: 15 }, (_, i) => ({
-      id: i + 1,
-      country: countries[Math.floor(Math.random() * countries.length)],
-      product: products[Math.floor(Math.random() * products.length)],
-      market_size: Math.floor(Math.random() * 10000000000), // Up to 10B
-      growth_rate: (Math.random() * 10).toFixed(2),
-      competition_level: ['Low', 'Medium', 'High'][Math.floor(Math.random() * 3)],
-      entry_barriers: Math.floor(Math.random() * 100),
-      last_updated: new Date().toISOString()
-    }))
-  }
-
-  private generateTariffData(): any[] {
-    const countries = ['United States', 'China', 'Germany', 'Japan']
-    const products = ['Electronics', 'Textiles', 'Automotive']
-    
-    return Array.from({ length: 25 }, (_, i) => ({
-      id: i + 1,
-      hs_code: `${Math.floor(Math.random() * 9999).toString().padStart(4, '0')}.${Math.floor(Math.random() * 99).toString().padStart(2, '0')}.00`,
-      product: products[Math.floor(Math.random() * products.length)],
-      origin_country: countries[Math.floor(Math.random() * countries.length)],
-      destination_country: countries[Math.floor(Math.random() * countries.length)],
-      tariff_rate: (Math.random() * 25).toFixed(2),
-      additional_duties: (Math.random() * 10).toFixed(2),
-      last_updated: new Date().toISOString()
-    }))
-  }
-
-  private generateEconomicData(): any[] {
-    const countries = ['United States', 'China', 'Germany', 'Japan', 'United Kingdom', 'France']
-    
-    return countries.map((country, i) => ({
-      id: i + 1,
-      country: country,
-      gdp_growth: (Math.random() * 8 - 2).toFixed(2), // -2% to 6%
-      inflation_rate: (Math.random() * 10).toFixed(2),
-      unemployment_rate: (Math.random() * 15).toFixed(2),
-      interest_rate: (Math.random() * 8).toFixed(2),
-      exchange_rate_usd: (Math.random() * 150).toFixed(4),
-      last_updated: new Date().toISOString()
-    }))
-  }
-
   // Utility methods
   isConnectionActive(): boolean {
-    return this.isConnected
+    return true // Placeholder for actual connection status check
   }
 
   getLastError(): string | null {
-    return this.lastError
+    return null // Placeholder for actual error retrieval
   }
 
   getConnectionAttempts(): number {
-    return this.connectionAttempts
+    return 0 // Placeholder for actual connection attempts retrieval
   }
 
   resetConnectionAttempts(): void {
-    this.connectionAttempts = 0
+    // Placeholder for actual connection attempts reset
   }
-}
-
-// Factory function to create HANA client
-export function createHANAClient(): SAP_HANA_Client {
-  const config: HANAConnectionConfig = {
-    serverNode: process.env.SAP_HANA_SERVER_NODE || 'localhost:39013',
-    username: process.env.SAP_HANA_USERNAME || 'SYSTEM',
-    password: process.env.SAP_HANA_PASSWORD || 'password',
-    database: 'HXE',
-    schema: 'TRADE_INTELLIGENCE'
-  }
-
-  return new SAP_HANA_Client(config)
 }
 
 // Singleton instance
@@ -296,10 +406,12 @@ let hanaClient: SAP_HANA_Client | null = null
 
 export function getHANAClient(): SAP_HANA_Client {
   if (!hanaClient) {
-    hanaClient = createHANAClient()
+    hanaClient = new SAP_HANA_Client()
   }
   return hanaClient
 }
 
+// Alias for compatibility
+export const getHanaClient = getHANAClient
+
 export type { HANAConnectionConfig, QueryResult, ConnectionStatus }
-export { SAP_HANA_Client }

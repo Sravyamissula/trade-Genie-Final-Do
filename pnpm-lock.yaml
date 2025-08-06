@@ -128,6 +128,9 @@ importers:
       geist:
         specifier: latest
         version: 1.4.2(next@14.2.16(react-dom@18.0.0(react@18.0.0))(react@18.0.0))
+      hdb:
+        specifier: latest
+        version: 2.25.1
       input-otp:
         specifier: latest
         version: 1.4.2(react-dom@18.0.0(react@18.0.0))(react@18.0.0)
@@ -1389,9 +1392,17 @@ packages:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
 
+  hdb@2.25.1:
+    resolution: {integrity: sha512-/ojm+fki1r+sqMqQjwTLcF1VeL3tkNxMLS/CVKXuUbz6xDco3wdSR0wTh0FzMPUOHnptCErxV6YNUbvdALSFww==}
+    engines: {node: '>= 18'}
+
   html2canvas@1.4.1:
     resolution: {integrity: sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==}
     engines: {node: '>=8.0.0'}
+
+  iconv-lite@0.4.24:
+    resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
+    engines: {node: '>=0.10.0'}
 
   immer@10.1.1:
     resolution: {integrity: sha512-s2MPrmjovJcoMaHtx6K11Ra7oD05NT97w1IC5zpMkT6Atjr7H8LjaDd81iIxUYpMKSRRNMJE703M1Fhr/TctHw==}
@@ -1779,6 +1790,9 @@ packages:
 
   run-parallel@1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
+
+  safer-buffer@2.1.2:
+    resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
 
   scheduler@0.21.0:
     resolution: {integrity: sha512-1r87x5fz9MXqswA2ERLo0EbOAU74DpIUO090gIasYTqlVoJeMcl+Z1Rg7WHz+qtPujhS/hGIt9kxZOYBV3faRQ==}
@@ -3196,11 +3210,19 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  hdb@2.25.1:
+    dependencies:
+      iconv-lite: 0.4.24
+
   html2canvas@1.4.1:
     dependencies:
       css-line-break: 2.1.0
       text-segmentation: 1.0.3
     optional: true
+
+  iconv-lite@0.4.24:
+    dependencies:
+      safer-buffer: 2.1.2
 
   immer@10.1.1: {}
 
@@ -3555,6 +3577,8 @@ snapshots:
   run-parallel@1.2.0:
     dependencies:
       queue-microtask: 1.2.3
+
+  safer-buffer@2.1.2: {}
 
   scheduler@0.21.0:
     dependencies:
