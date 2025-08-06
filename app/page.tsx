@@ -184,7 +184,7 @@ export default function LandingPage() {
               </p>
 
               <p className="text-lg text-gray-500 max-w-5xl mx-auto leading-relaxed">
-                Unlock international markets with AI-powered tools designed specifically for women entrepreneurs.
+                Unlock international markets with AI-powered tools designed specifically for  entrepreneurs.
                 Transform your trade journey with intelligent automation, global partnerships, and magical insights.
               </p>
             </div>
